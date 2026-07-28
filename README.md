@@ -113,6 +113,34 @@ RUNNING -> FAULT (COMMUNICATION_TIMEOUT)
 FAULT -> DISABLED -> READY
 ```
 
+## Optional real OPC UA client
+
+The real PLC adapter uses `open62541` and is excluded from the default offline
+build. Enabling it downloads the pinned `v1.5.4` SDK and builds a connection
+probe:
+
+```sh
+cmake -S . -B build-opcua -DMOTIONBRIDGE_ENABLE_OPCUA=ON
+cmake --build build-opcua --config Release
+```
+
+Copy `config/opcua_nodes.example.conf`, then replace its endpoint, namespace,
+and string NodeIds with the exact values exposed by the PLC server. Check the
+connection and read the command block:
+
+```sh
+./build-opcua/motionbridge_opcua_probe config/opcua_nodes.conf
+```
+
+The probe intentionally only connects and reads. OPC UA network calls are not
+placed inside the 1 kHz control loop; the later runtime integration will use a
+separate communication thread and a bounded mailbox.
+
+This first probe uses an anonymous session with OPC UA SecurityMode `None`.
+That is suitable for local commissioning only. Certificate trust, signed and
+encrypted sessions, and PLC access-control configuration are required before
+using the adapter on a production network.
+
 ## Next milestones
 
 1. Add an `open62541` OPC UA adapter and Siemens PLC command/status mapping.

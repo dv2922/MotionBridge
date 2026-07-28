@@ -1,6 +1,7 @@
 #include "motionbridge/control/pid_controller.hpp"
 #include "motionbridge/control/trapezoidal_trajectory.hpp"
 #include "motionbridge/communication/mock_plc.hpp"
+#include "motionbridge/communication/opcua_config.hpp"
 #include "motionbridge/core/controller_state_machine.hpp"
 #include "motionbridge/interfaces/fieldbus.hpp"
 #include "motionbridge/interfaces/opcua_transport.hpp"
@@ -14,6 +15,7 @@
 #include <cmath>
 #include <functional>
 #include <iostream>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -239,6 +241,32 @@ void test_plc_supervisor_fault_and_recovery()
     require(status.fault == motionbridge::FaultCode::none, "PLC fault remained latched after reset");
 }
 
+void test_opcua_configuration()
+{
+    std::istringstream input{
+        "endpoint=opc.tcp://127.0.0.1:4840\n"
+        "namespace=3\n"
+        "control_word=db.control\n"
+        "target_position=db.target\n"
+        "max_velocity=db.velocity\n"
+        "max_acceleration=db.acceleration\n"
+        "plc_heartbeat=db.plcHeartbeat\n"
+        "status_word=db.status\n"
+        "actual_position=db.position\n"
+        "actual_velocity=db.actualVelocity\n"
+        "following_error=db.error\n"
+        "fault_code=db.fault\n"
+        "controller_heartbeat=db.controllerHeartbeat\n"};
+    const auto configuration = motionbridge::load_opcua_configuration(input);
+    require(
+        configuration.endpoint == "opc.tcp://127.0.0.1:4840",
+        "OPC UA endpoint was not parsed");
+    require(configuration.nodes.namespace_index == 3, "OPC UA namespace was not parsed");
+    require(
+        configuration.nodes.control_word == "db.control",
+        "OPC UA control-word NodeId was not parsed");
+}
+
 } // namespace
 
 int main()
@@ -252,6 +280,7 @@ int main()
         {"PLC command/status mapping", test_plc_mapping},
         {"watchdog timeout", test_watchdog_timeout},
         {"PLC supervision fault and recovery", test_plc_supervisor_fault_and_recovery},
+        {"OPC UA configuration", test_opcua_configuration},
     };
 
     int failures = 0;
