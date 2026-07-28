@@ -2,22 +2,28 @@
 #include "motionbridge/control/trapezoidal_trajectory.hpp"
 #include "motionbridge/communication/mock_plc.hpp"
 #include "motionbridge/communication/opcua_config.hpp"
+#include "motionbridge/communication/plc_communication_worker.hpp"
 #include "motionbridge/core/controller_state_machine.hpp"
 #include "motionbridge/interfaces/fieldbus.hpp"
 #include "motionbridge/interfaces/opcua_transport.hpp"
 #include "motionbridge/interfaces/plc_interface.hpp"
 #include "motionbridge/interfaces/ros_adapter.hpp"
+#include "motionbridge/runtime/async_plc_supervisor.hpp"
 #include "motionbridge/runtime/control_loop.hpp"
+#include "motionbridge/runtime/latest_value_mailbox.hpp"
 #include "motionbridge/runtime/plc_supervisor.hpp"
 #include "motionbridge/runtime/watchdog.hpp"
 #include "motionbridge/simulation/servo_plant.hpp"
 
+#include <chrono>
 #include <cmath>
 #include <functional>
 #include <iostream>
+#include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -267,6 +273,116 @@ void test_opcua_configuration()
         "OPC UA control-word NodeId was not parsed");
 }
 
+void test_latest_value_mailbox()
+{
+    motionbridge::LatestValueMailbox<int> mailbox;
+    require(!mailbox.try_read().has_value(), "Empty mailbox returned a value");
+    require(mailbox.try_publish(10), "Mailbox rejected first value");
+    const auto first = mailbox.try_read();
+    require(first && first->value == 10, "Mailbox returned the wrong first value");
+    require(mailbox.try_publish(20), "Mailbox rejected replacement value");
+    const auto second = mailbox.try_read();
+    require(second && second->value == 20, "Mailbox did not return the latest value");
+    require(
+        second->sequence > first->sequence,
+        "Mailbox sequence did not advance");
+}
+
+void test_plc_communication_worker()
+{
+    using namespace std::chrono_literals;
+
+    motionbridge::MockPlc plc;
+    motionbridge::PlcCommandData command;
+    command.heartbeat = 17;
+    command.target_position_rad = 1.25;
+    plc.set_command(command);
+
+    motionbridge::PlcCommunicationWorker worker{
+        {.poll_period = 2ms, .reconnect_period = 5ms},
+        plc};
+    worker.start();
+
+    std::optional<motionbridge::PlcCommunicationWorker::CommandSnapshot> received;
+    for (int attempt = 0; attempt < 100 && !received; ++attempt) {
+        std::this_thread::sleep_for(2ms);
+        received = worker.try_read_command();
+    }
+    require(received.has_value(), "PLC worker did not publish a command");
+    require(received->value.heartbeat == 17, "PLC worker corrupted the heartbeat");
+    require(
+        std::abs(received->value.target_position_rad - 1.25) < 1e-12,
+        "PLC worker corrupted the target");
+
+    motionbridge::PlcStatusData status;
+    status.controller_heartbeat = 99;
+    require(worker.try_publish_status(status), "PLC worker rejected status");
+    for (int attempt = 0; attempt < 100; ++attempt) {
+        std::this_thread::sleep_for(2ms);
+        if (plc.last_status().controller_heartbeat == 99) {
+            break;
+        }
+    }
+    require(
+        plc.last_status().controller_heartbeat == 99,
+        "PLC worker did not write controller status");
+    require(worker.statistics().successful_reads > 0, "PLC worker read statistics are empty");
+    worker.stop();
+}
+
+void test_async_plc_supervisor_timeout()
+{
+    using namespace std::chrono_literals;
+
+    motionbridge::MockPlc plc;
+    motionbridge::PlcCommandData command;
+    command.heartbeat = 1;
+    plc.set_command(command);
+
+    motionbridge::PlcCommunicationWorker worker{
+        {.poll_period = 2ms, .reconnect_period = 5ms},
+        plc};
+    motionbridge::PidController pid{
+        {.kp = 32.0, .ki = 5.0, .kd = 2.0, .derivative_filter_time_s = 0.008},
+        -10.0,
+        10.0};
+    motionbridge::ControlLoop loop{
+        {.frequency_hz = 1000.0,
+         .position_tolerance_rad = 0.005,
+         .velocity_tolerance_rad_s = 0.01},
+        pid};
+    motionbridge::AsyncPlcSupervisor supervisor{0.03, worker, loop};
+    worker.start();
+
+    motionbridge::ControllerStatus status;
+    for (int count = 0; count < 15; ++count) {
+        status = supervisor.update(0.001);
+        std::this_thread::sleep_for(1ms);
+    }
+    require(
+        status.state == motionbridge::ControllerState::disabled,
+        "Async PLC power-on failed");
+
+    command.control_word |= motionbridge::plc_control_bit::enable;
+    ++command.heartbeat;
+    plc.set_command(command);
+    for (int count = 0; count < 15; ++count) {
+        status = supervisor.update(0.001);
+        std::this_thread::sleep_for(1ms);
+    }
+    require(status.state == motionbridge::ControllerState::ready, "Async PLC enable failed");
+
+    for (int count = 0; count < 40; ++count) {
+        status = supervisor.update(0.001);
+        std::this_thread::sleep_for(1ms);
+    }
+    require(status.state == motionbridge::ControllerState::fault, "Async watchdog did not fault");
+    require(
+        status.fault == motionbridge::FaultCode::communication_timeout,
+        "Async watchdog produced the wrong fault");
+    worker.stop();
+}
+
 } // namespace
 
 int main()
@@ -281,6 +397,9 @@ int main()
         {"watchdog timeout", test_watchdog_timeout},
         {"PLC supervision fault and recovery", test_plc_supervisor_fault_and_recovery},
         {"OPC UA configuration", test_opcua_configuration},
+        {"latest-value mailbox", test_latest_value_mailbox},
+        {"PLC communication worker", test_plc_communication_worker},
+        {"asynchronous PLC watchdog", test_async_plc_supervisor_timeout},
     };
 
     int failures = 0;
@@ -298,3 +417,5 @@ int main()
               << '/' << tests.size() << " tests passed\n";
     return failures == 0 ? 0 : 1;
 }
+#include <chrono>
+#include <thread>

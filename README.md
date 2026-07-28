@@ -113,6 +113,32 @@ RUNNING -> FAULT (COMMUNICATION_TIMEOUT)
 FAULT -> DISABLED -> READY
 ```
 
+### Asynchronous communication demo
+
+The production-oriented path keeps PLC or OPC UA work off the 1 kHz control
+thread. A `PlcCommunicationWorker` performs blocking reads and writes at 50 Hz.
+The controller exchanges only the newest command and status through bounded,
+non-blocking mailboxes:
+
+```text
+PLC / OPC UA (50 Hz worker thread)
+              |
+       latest-value mailboxes
+              |
+       control loop (1 kHz)
+```
+
+Run the local threaded demonstration:
+
+```sh
+./build/motionbridge_async_plc_demo
+```
+
+It executes 1,500 control cycles while performing roughly 75 PLC reads. A
+frozen heartbeat still causes the control-side watchdog to latch a communication
+fault, after which heartbeat recovery and an explicit reset return the axis to
+`READY`.
+
 ## Optional real OPC UA client
 
 The real PLC adapter uses `open62541` and is excluded from the default offline

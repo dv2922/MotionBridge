@@ -16,10 +16,12 @@ find_package(Threads REQUIRED)
 add_library(motionbridge
     src/communication/mock_plc.cpp
     src/communication/opcua_config.cpp
+    src/communication/plc_communication_worker.cpp
     src/control/pid_controller.cpp
     src/control/trapezoidal_trajectory.cpp
     src/core/controller_state_machine.cpp
     src/interfaces/plc_mapping.cpp
+    src/runtime/async_plc_supervisor.cpp
     src/runtime/control_loop.cpp
     src/runtime/plc_supervisor.cpp
     src/runtime/watchdog.cpp
@@ -47,6 +49,9 @@ target_link_libraries(motionbridge_demo PRIVATE motionbridge)
 
 add_executable(motionbridge_plc_demo src/plc_demo.cpp)
 target_link_libraries(motionbridge_plc_demo PRIVATE motionbridge)
+
+add_executable(motionbridge_async_plc_demo src/async_plc_demo.cpp)
+target_link_libraries(motionbridge_async_plc_demo PRIVATE motionbridge)
 
 if(MOTIONBRIDGE_ENABLE_OPCUA)
     if(MOTIONBRIDGE_FETCH_OPEN62541)
