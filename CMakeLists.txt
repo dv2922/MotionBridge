@@ -12,10 +12,14 @@ option(MOTIONBRIDGE_BUILD_TESTS "Build MotionBridge tests" ON)
 find_package(Threads REQUIRED)
 
 add_library(motionbridge
+    src/communication/mock_plc.cpp
     src/control/pid_controller.cpp
     src/control/trapezoidal_trajectory.cpp
     src/core/controller_state_machine.cpp
+    src/interfaces/plc_mapping.cpp
     src/runtime/control_loop.cpp
+    src/runtime/plc_supervisor.cpp
+    src/runtime/watchdog.cpp
     src/simulation/servo_plant.cpp
 )
 
@@ -37,6 +41,9 @@ endif()
 
 add_executable(motionbridge_demo src/main.cpp)
 target_link_libraries(motionbridge_demo PRIVATE motionbridge)
+
+add_executable(motionbridge_plc_demo src/plc_demo.cpp)
+target_link_libraries(motionbridge_plc_demo PRIVATE motionbridge)
 
 if(MOTIONBRIDGE_BUILD_TESTS)
     include(CTest)

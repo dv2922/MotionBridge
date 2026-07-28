@@ -15,6 +15,14 @@ The first milestone includes:
 - dependency-free unit and integration tests;
 - narrow interfaces for future PLC, OPC UA, EtherCAT, and ROS 2 adapters.
 
+The PLC-supervision increment also includes:
+
+- industrial control-word and status-word mapping;
+- separate 50 Hz PLC and 1 kHz control timing domains;
+- PLC and controller heartbeat counters;
+- communication watchdog with a latched timeout fault;
+- a mock PLC used for local demonstrations and automated tests.
+
 ## Architecture
 
 ```text
@@ -85,6 +93,25 @@ python scripts/plot_telemetry.py build/motion.csv --output build/motion.svg
 
 Open `build/motion.svg` in a browser. The chart uses only the Python standard
 library, so it requires no third-party packages.
+
+## Run the PLC-supervised safety demo
+
+This local demo needs no Siemens or TwinCAT installation. It uses the same PLC
+interface that a future OPC UA adapter will implement:
+
+```sh
+./build/motionbridge_plc_demo
+```
+
+The mock PLC powers and enables the axis, starts a move, freezes its heartbeat
+to simulate a network failure, and then reconnects and explicitly resets the
+latched controller fault. Expected state sequence:
+
+```text
+POWER_OFF -> DISABLED -> READY -> RUNNING
+RUNNING -> FAULT (COMMUNICATION_TIMEOUT)
+FAULT -> DISABLED -> READY
+```
 
 ## Next milestones
 

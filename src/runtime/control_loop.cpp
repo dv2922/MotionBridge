@@ -25,6 +25,11 @@ void ControlLoop::set_command(const MotionCommand& command) noexcept
     command_ = command;
 }
 
+void ControlLoop::set_external_fault(FaultCode fault) noexcept
+{
+    external_fault_ = fault;
+}
+
 FaultCode ControlLoop::validate_command(const MotionCommand& command) const noexcept
 {
     if (!std::isfinite(command.target_position_rad)
@@ -41,7 +46,9 @@ ControllerStatus ControlLoop::step(double dt_seconds) noexcept
 {
     const ControllerState previous_state = state_machine_.state();
     const FaultCode validation_fault = validate_command(command_);
-    state_machine_.update(command_, status_.target_reached, validation_fault);
+    const FaultCode detected_fault =
+        external_fault_ != FaultCode::none ? external_fault_ : validation_fault;
+    state_machine_.update(command_, status_.target_reached, detected_fault);
     const ControllerState current_state = state_machine_.state();
 
     if (current_state == ControllerState::running

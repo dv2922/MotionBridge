@@ -27,6 +27,7 @@ public:
         ServoPlant plant = ServoPlant{});
 
     void set_command(const MotionCommand& command) noexcept;
+    void set_external_fault(FaultCode fault) noexcept;
     [[nodiscard]] ControllerStatus step(double dt_seconds) noexcept;
 
     ControllerStatus run_for(
@@ -46,9 +47,9 @@ private:
     TrapezoidalTrajectory trajectory_;
     ControllerStateMachine state_machine_;
     MotionCommand command_{};
+    FaultCode external_fault_{FaultCode::none};
     ControllerStatus status_{};
     bool motion_initialized_{false};
 };
 
 } // namespace motionbridge
-

@@ -1,11 +1,14 @@
 #include "motionbridge/control/pid_controller.hpp"
 #include "motionbridge/control/trapezoidal_trajectory.hpp"
+#include "motionbridge/communication/mock_plc.hpp"
 #include "motionbridge/core/controller_state_machine.hpp"
 #include "motionbridge/interfaces/fieldbus.hpp"
 #include "motionbridge/interfaces/opcua_transport.hpp"
 #include "motionbridge/interfaces/plc_interface.hpp"
 #include "motionbridge/interfaces/ros_adapter.hpp"
 #include "motionbridge/runtime/control_loop.hpp"
+#include "motionbridge/runtime/plc_supervisor.hpp"
+#include "motionbridge/runtime/watchdog.hpp"
 #include "motionbridge/simulation/servo_plant.hpp"
 
 #include <cmath>
@@ -133,6 +136,109 @@ void test_control_loop_reaches_target()
     require(std::abs(status.servo.position_rad - 1.0) <= 0.005, "Final position is outside tolerance");
 }
 
+void test_plc_mapping()
+{
+    motionbridge::PlcCommandData data;
+    data.control_word = static_cast<std::uint16_t>(
+        motionbridge::plc_control_bit::power_available
+        | motionbridge::plc_control_bit::enable
+        | motionbridge::plc_control_bit::start);
+    data.target_position_rad = 1.25;
+    const auto command = motionbridge::decode_plc_command(data);
+    require(command.power_available, "PLC power bit was not decoded");
+    require(command.enable, "PLC enable bit was not decoded");
+    require(command.start, "PLC start bit was not decoded");
+    require(std::abs(command.target_position_rad - 1.25) < 1e-12, "PLC target was not decoded");
+
+    motionbridge::ControllerStatus status;
+    status.state = motionbridge::ControllerState::running;
+    status.target_reached = false;
+    status.servo.position_rad = 0.75;
+    const auto plc_status = motionbridge::encode_plc_status(status, 42);
+    require(
+        (plc_status.status_word & motionbridge::plc_status_bit::running) != 0U,
+        "PLC running status bit was not encoded");
+    require(plc_status.controller_heartbeat == 42, "Controller heartbeat was not encoded");
+}
+
+void test_watchdog_timeout()
+{
+    motionbridge::Watchdog watchdog{0.05};
+    watchdog.advance(1.0);
+    require(!watchdog.expired(), "Unarmed watchdog expired");
+    watchdog.kick();
+    watchdog.advance(0.049);
+    require(!watchdog.expired(), "Watchdog expired too early");
+    watchdog.advance(0.002);
+    require(watchdog.expired(), "Watchdog did not detect timeout");
+    watchdog.kick();
+    require(!watchdog.expired(), "Watchdog kick did not clear timeout");
+}
+
+void test_plc_supervisor_fault_and_recovery()
+{
+    motionbridge::PidController pid{
+        {.kp = 32.0, .ki = 5.0, .kd = 2.0, .derivative_filter_time_s = 0.008},
+        -10.0,
+        10.0};
+    motionbridge::ControlLoop loop{
+        {.frequency_hz = 1000.0,
+         .position_tolerance_rad = 0.005,
+         .velocity_tolerance_rad_s = 0.01},
+        pid};
+    motionbridge::MockPlc plc;
+    require(plc.connect(), "Mock PLC failed to connect");
+    motionbridge::PlcSupervisor supervisor{
+        {.poll_period_seconds = 0.005, .watchdog_timeout_seconds = 0.02},
+        plc,
+        loop};
+
+    motionbridge::PlcCommandData command;
+    command.heartbeat = 1;
+    plc.set_command(command);
+    auto status = supervisor.update(0.001);
+    require(status.state == motionbridge::ControllerState::disabled, "PLC power-on failed");
+
+    command.control_word |= motionbridge::plc_control_bit::enable;
+    ++command.heartbeat;
+    plc.set_command(command);
+    for (int count = 0; count < 10; ++count) {
+        status = supervisor.update(0.001);
+    }
+    require(status.state == motionbridge::ControllerState::ready, "PLC enable failed");
+
+    command.control_word |= motionbridge::plc_control_bit::start;
+    command.target_position_rad = 1.0;
+    ++command.heartbeat;
+    plc.set_command(command);
+    for (int count = 0; count < 10; ++count) {
+        status = supervisor.update(0.001);
+    }
+    require(status.state == motionbridge::ControllerState::running, "PLC start failed");
+
+    command.control_word &= static_cast<std::uint16_t>(~motionbridge::plc_control_bit::start);
+    ++command.heartbeat;
+    plc.set_command(command);
+    for (int count = 0; count < 40; ++count) {
+        status = supervisor.update(0.001);
+    }
+    require(status.state == motionbridge::ControllerState::fault, "PLC timeout did not fault");
+    require(
+        status.fault == motionbridge::FaultCode::communication_timeout,
+        "PLC timeout produced the wrong fault");
+
+    command.control_word = static_cast<std::uint16_t>(
+        motionbridge::plc_control_bit::power_available
+        | motionbridge::plc_control_bit::reset_fault);
+    ++command.heartbeat;
+    plc.set_command(command);
+    for (int count = 0; count < 10; ++count) {
+        status = supervisor.update(0.001);
+    }
+    require(status.state == motionbridge::ControllerState::disabled, "PLC fault reset failed");
+    require(status.fault == motionbridge::FaultCode::none, "PLC fault remained latched after reset");
+}
+
 } // namespace
 
 int main()
@@ -143,6 +249,9 @@ int main()
         {"state machine and latched fault", test_state_machine_and_latched_fault},
         {"servo plant physics", test_servo_plant_physics},
         {"control-loop integration", test_control_loop_reaches_target},
+        {"PLC command/status mapping", test_plc_mapping},
+        {"watchdog timeout", test_watchdog_timeout},
+        {"PLC supervision fault and recovery", test_plc_supervisor_fault_and_recovery},
     };
 
     int failures = 0;
