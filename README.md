@@ -26,20 +26,18 @@ The PLC-supervision increment also includes:
 ## Architecture
 
 ```text
-Future ROS 2 adapter ──┐
-Future PLC/OPC UA ─────┴─> Motion command
-                              │
-                    Controller state machine
-                              │
-                    Trapezoidal trajectory
-                              │
-                         PID controller
-                              │
-                    Simulated servo plant
-                              │
-                 Status + timing diagnostics
-                              │
-Future EtherCAT adapter <─────┘
+ROS 2 adapter (planned) ----+
+PLC / OPC UA ---------------+--> Motion command
+                                  |
+                           State machine
+                                  |
+                        Trajectory generator
+                                  |
+                            PID controller
+                                  |
+                  Fieldbus interface / servo plant
+                                  |
+                     Status + timing diagnostics
 ```
 
 The control kernel has no dependency on any vendor SDK. Later integrations
@@ -167,9 +165,31 @@ That is suitable for local commissioning only. Certificate trust, signed and
 encrypted sessions, and PLC access-control configuration are required before
 using the adapter on a production network.
 
-## Next milestones
+## Milestone status
 
-1. Add an `open62541` OPC UA adapter and Siemens PLC command/status mapping.
-2. Expose the kernel through a ROS 2 `ros2_control` hardware plugin.
-3. Implement fake CiA 402 PDO exchange behind `IFieldbus`.
-4. Add a native EtherCAT or TwinCAT ADS backend without changing the kernel.
+| Capability | Status | Evidence |
+|---|---|---|
+| C++20 motion-control kernel | Complete | State machine, trajectory, PID, plant, and fixed-period loop |
+| Automated verification | Complete | 12 unit and integration tests |
+| Visual telemetry | Complete | CSV logging and dependency-free SVG plots |
+| PLC contract and safety demo | Complete | Control/status words, heartbeat, watchdog, fault recovery |
+| Asynchronous PLC communication | Complete | 50 Hz worker and latest-value mailboxes around the 1 kHz loop |
+| Real OPC UA client boundary | Complete | Optional pinned `open62541` adapter and connection probe |
+| Siemens PLCSIM Advanced connection | Next | Configure the PLC OPC UA server and exact NodeIds |
+| Live OPC UA runtime integration | Next | Attach `OpcUaPlcClient` to the communication worker |
+| ROS 2 integration | Planned | `ros2_control` hardware plugin and telemetry |
+| EtherCAT / CiA 402 integration | Planned | Fake PDO backend first, then a native backend |
+
+The project is a functional controller simulation, not a safety-certified
+controller or a hard-real-time Windows application. Timing statistics describe
+the measured demo environment only.
+
+## Immediate next steps
+
+1. Create the MotionBridge command and status data block in TIA Portal.
+2. Enable the OPC UA server in the Siemens PLC or PLCSIM Advanced instance.
+3. Record the endpoint, namespace index, and exact NodeIds in
+   `config/opcua_nodes.conf`.
+4. Run `motionbridge_opcua_probe` to prove the real connection and reads.
+5. Connect `OpcUaPlcClient` to `PlcCommunicationWorker`, keeping all network
+   activity outside the 1 kHz controller loop.
