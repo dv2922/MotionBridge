@@ -67,9 +67,24 @@ Useful demo options:
 --max-acceleration <rad/s2> Trajectory acceleration limit (default: 1.5)
 --duration <seconds>        Maximum simulation time (default: 5.0)
 --frequency <Hz>            Control frequency (default: 1000)
+--csv <path>                Save per-cycle telemetry as CSV
 --fast                      Run without real-time sleeping
 --help                      Show command help
 ```
+
+## Create a visual result
+
+Run a simulation and save the per-cycle reference, actual position, velocity,
+torque, and following error:
+
+```sh
+./build/motionbridge_demo --target 1.57 --max-velocity 0.8 \
+  --max-acceleration 1.5 --duration 5 --fast --csv build/motion.csv
+python scripts/plot_telemetry.py build/motion.csv --output build/motion.svg
+```
+
+Open `build/motion.svg` in a browser. The chart uses only the Python standard
+library, so it requires no third-party packages.
 
 ## Next milestones
 
@@ -77,4 +92,3 @@ Useful demo options:
 2. Expose the kernel through a ROS 2 `ros2_control` hardware plugin.
 3. Implement fake CiA 402 PDO exchange behind `IFieldbus`.
 4. Add a native EtherCAT or TwinCAT ADS backend without changing the kernel.
-

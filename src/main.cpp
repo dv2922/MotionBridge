@@ -3,8 +3,11 @@
 #include <cmath>
 #include <cstdlib>
 #include <exception>
+#include <filesystem>
+#include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 
@@ -16,6 +19,7 @@ struct Options {
     double max_acceleration{1.5};
     double duration{5.0};
     double frequency{1000.0};
+    std::string csv_file{};
     bool fast{false};
 };
 
@@ -29,6 +33,7 @@ void print_help()
         << "  --max-acceleration <rad/s2>  Acceleration limit (default: 1.5)\n"
         << "  --duration <seconds>         Maximum duration (default: 5.0)\n"
         << "  --frequency <Hz>             Loop frequency (default: 1000)\n"
+        << "  --csv <path>                 Save cycle telemetry as CSV\n"
         << "  --fast                       Disable real-time sleeping\n"
         << "  --help                       Show this help\n";
 }
@@ -54,6 +59,13 @@ Options parse_options(int argc, char** argv)
         }
         if (argument == "--fast") {
             options.fast = true;
+            continue;
+        }
+        if (argument == "--csv") {
+            if (index + 1 >= argc) {
+                throw std::invalid_argument("Missing value for --csv");
+            }
+            options.csv_file = argv[++index];
             continue;
         }
         if (index + 1 >= argc) {
@@ -118,11 +130,39 @@ int main(int argc, char** argv)
         command.start = false;
         loop.set_command(command);
 
+        std::ofstream csv;
+        if (!options.csv_file.empty()) {
+            const std::filesystem::path csv_path{options.csv_file};
+            if (csv_path.has_parent_path()) {
+                std::filesystem::create_directories(csv_path.parent_path());
+            }
+            csv.open(csv_path);
+            if (!csv) {
+                throw std::runtime_error("Unable to open CSV output: " + options.csv_file);
+            }
+            csv << "time_s,state,reference_position_rad,actual_position_rad,"
+                   "reference_velocity_rad_s,actual_velocity_rad_s,torque_nm,"
+                   "following_error_rad\n";
+            csv << std::fixed << std::setprecision(9);
+        }
+
         auto last_report_cycle = std::uint64_t{0};
         const auto status = loop.run_for(
             std::chrono::duration<double>{options.duration},
             !options.fast,
             [&](const motionbridge::ControllerStatus& current) {
+                if (csv) {
+                    const double time_s =
+                        static_cast<double>(current.timing.cycles) / options.frequency;
+                    csv << time_s << ','
+                        << motionbridge::to_string(current.state) << ','
+                        << current.reference.position_rad << ','
+                        << current.servo.position_rad << ','
+                        << current.reference.velocity_rad_s << ','
+                        << current.servo.velocity_rad_s << ','
+                        << current.servo.commanded_torque_nm << ','
+                        << current.following_error_rad << '\n';
+                }
                 const auto interval = static_cast<std::uint64_t>(options.frequency / 4.0);
                 if (interval > 0 && current.timing.cycles >= last_report_cycle + interval) {
                     last_report_cycle = current.timing.cycles;
@@ -149,6 +189,10 @@ int main(int argc, char** argv)
             << "Maximum execution:    " << status.timing.maximum_execution_us << " us\n"
             << "Maximum start jitter: " << status.timing.maximum_jitter_us << " us\n"
             << "Deadline misses:      " << status.timing.deadline_misses << '\n';
+
+        if (csv) {
+            std::cout << "Telemetry CSV:        " << options.csv_file << '\n';
+        }
 
         return status.target_reached && status.fault == motionbridge::FaultCode::none ? 0 : 2;
     } catch (const std::exception& error) {
