@@ -3,6 +3,7 @@
 #include "motionbridge/communication/mock_plc.hpp"
 #include "motionbridge/communication/opcua_config.hpp"
 #include "motionbridge/communication/plc_communication_worker.hpp"
+#include "motionbridge/communication/s7_db_layout.hpp"
 #include "motionbridge/core/controller_state_machine.hpp"
 #include "motionbridge/interfaces/fieldbus.hpp"
 #include "motionbridge/interfaces/opcua_transport.hpp"
@@ -16,6 +17,7 @@
 #include "motionbridge/simulation/servo_plant.hpp"
 
 #include <chrono>
+#include <cstdint>
 #include <cmath>
 #include <functional>
 #include <iostream>
@@ -109,6 +111,42 @@ void test_servo_plant_physics()
     require(
         std::abs(plant.state().simulated_current_a - 2.0) < 1e-12,
         "Torque-to-current conversion is incorrect");
+}
+
+void test_s7_db_layout()
+{
+    const motionbridge::s7_db_layout::CommandBuffer command_bytes{
+        0x00, 0x23,
+        0x3f, 0xf0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x3f, 0xe0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x3f, 0xf4, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x01, 0x02, 0x03, 0x04};
+    const auto command = motionbridge::s7_db_layout::decode_command(command_bytes);
+    require(command.control_word == 0x23, "S7 control word decoding failed");
+    require(command.target_position_rad == 1.0, "S7 LREAL target decoding failed");
+    require(command.max_velocity_rad_s == 0.5, "S7 LREAL velocity decoding failed");
+    require(command.max_acceleration_rad_s2 == 1.25, "S7 LREAL acceleration decoding failed");
+    require(command.heartbeat == 0x01020304, "S7 UDInt heartbeat decoding failed");
+
+    motionbridge::PlcStatusData status;
+    status.status_word = 0x0013;
+    status.actual_position_rad = 1.0;
+    status.actual_velocity_rad_s = 0.5;
+    status.following_error_rad = -0.25;
+    status.fault_code = 1001;
+    status.controller_heartbeat = 0x01020304;
+    const auto status_bytes = motionbridge::s7_db_layout::encode_status(status);
+
+    require(status_bytes[0] == 0x00 && status_bytes[1] == 0x13,
+        "S7 status word encoding failed");
+    require(status_bytes[2] == 0x3f && status_bytes[3] == 0xf0,
+        "S7 LREAL position encoding failed");
+    require(status_bytes[18] == 0xbf && status_bytes[19] == 0xd0,
+        "S7 negative LREAL encoding failed");
+    require(status_bytes[26] == 0x03 && status_bytes[27] == 0xe9,
+        "S7 UInt fault encoding failed");
+    require(status_bytes[28] == 0x01 && status_bytes[31] == 0x04,
+        "S7 UDInt controller heartbeat encoding failed");
 }
 
 void test_control_loop_reaches_target()
@@ -392,6 +430,7 @@ int main()
         {"trajectory limits and target", test_trajectory_respects_limits_and_reaches_target},
         {"state machine and latched fault", test_state_machine_and_latched_fault},
         {"servo plant physics", test_servo_plant_physics},
+        {"S7 DB2 byte layout", test_s7_db_layout},
         {"control-loop integration", test_control_loop_reaches_target},
         {"PLC command/status mapping", test_plc_mapping},
         {"watchdog timeout", test_watchdog_timeout},

@@ -1,5 +1,6 @@
 /build/
 /build-opcua*/
+/build-s7*/
 /out/
 /.cache/
 compile_commands.json
