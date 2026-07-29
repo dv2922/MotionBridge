@@ -167,18 +167,30 @@ using the adapter on a production network.
 
 ## Milestone status
 
+![Tests](https://img.shields.io/badge/tests-12%2F12%20passing-brightgreen)
+![Control kernel](https://img.shields.io/badge/control%20kernel-complete-brightgreen)
+![Siemens integration](https://img.shields.io/badge/Siemens%20integration-awaiting-yellow)
+![ROS 2](https://img.shields.io/badge/ROS%202-planned-blue)
+![EtherCAT](https://img.shields.io/badge/EtherCAT-planned-blue)
+
 | Capability | Status | Evidence |
 |---|---|---|
-| C++20 motion-control kernel | Complete | State machine, trajectory, PID, plant, and fixed-period loop |
-| Automated verification | Complete | 12 unit and integration tests |
-| Visual telemetry | Complete | CSV logging and dependency-free SVG plots |
-| PLC contract and safety demo | Complete | Control/status words, heartbeat, watchdog, fault recovery |
-| Asynchronous PLC communication | Complete | 50 Hz worker and latest-value mailboxes around the 1 kHz loop |
-| Real OPC UA client boundary | Complete | Optional pinned `open62541` adapter and connection probe |
-| Siemens PLCSIM Advanced connection | Next | Configure the PLC OPC UA server and exact NodeIds |
-| Live OPC UA runtime integration | Next | Attach `OpcUaPlcClient` to the communication worker |
-| ROS 2 integration | Planned | `ros2_control` hardware plugin and telemetry |
-| EtherCAT / CiA 402 integration | Planned | Fake PDO backend first, then a native backend |
+| C++20 motion-control kernel | ![Complete](https://img.shields.io/badge/status-complete-brightgreen) | State machine, trajectory, PID, plant, and fixed-period loop |
+| Automated verification | ![Passing](https://img.shields.io/badge/status-passing-brightgreen) | 12 unit and integration tests |
+| Visual telemetry | ![Complete](https://img.shields.io/badge/status-complete-brightgreen) | CSV logging and dependency-free SVG plots |
+| PLC contract and safety demo | ![Complete](https://img.shields.io/badge/status-complete-brightgreen) | Control/status words, heartbeat, watchdog, fault recovery |
+| Asynchronous PLC communication | ![Complete](https://img.shields.io/badge/status-complete-brightgreen) | 50 Hz worker and latest-value mailboxes around the 1 kHz loop |
+| Real OPC UA client boundary | ![Complete](https://img.shields.io/badge/status-complete-brightgreen) | Optional pinned `open62541` adapter and connection probe |
+| Siemens PLCSIM Advanced connection | ![Awaiting](https://img.shields.io/badge/status-awaiting-yellow) | Configure the PLC OPC UA server and exact NodeIds |
+| Live OPC UA runtime integration | ![Awaiting](https://img.shields.io/badge/status-awaiting-yellow) | Attach `OpcUaPlcClient` to the communication worker |
+| ROS 2 integration | ![Planned](https://img.shields.io/badge/status-planned-blue) | `ros2_control` hardware plugin and telemetry |
+| EtherCAT / CiA 402 integration | ![Planned](https://img.shields.io/badge/status-planned-blue) | Fake PDO backend first, then a native backend |
+
+Status legend:
+![Complete](https://img.shields.io/badge/complete-passing-brightgreen)
+![Awaiting](https://img.shields.io/badge/awaiting-next-yellow)
+![Planned](https://img.shields.io/badge/planned-backlog-blue)
+![Blocked](https://img.shields.io/badge/blocked-failing-red)
 
 The project is a functional controller simulation, not a safety-certified
 controller or a hard-real-time Windows application. Timing statistics describe
